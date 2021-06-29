@@ -87,27 +87,6 @@ func (a *API) listAssets(ctx context.Context, filter struct {
 	return NewSuccessResponse(annotatedAssets)
 }
 
-// POST /list-balances
-func (a *API) listBalances(ctx context.Context, filter struct {
-	AccountID    string `json:"account_id"`
-	AccountAlias string `json:"account_alias"`
-}) Response {
-	accountID := filter.AccountID
-	if filter.AccountAlias != "" {
-		acc, err := a.wallet.AccountMgr.FindByAlias(filter.AccountAlias)
-		if err != nil {
-			return NewErrorResponse(err)
-		}
-		accountID = acc.ID
-	}
-
-	balances, err := a.wallet.GetAccountBalances(accountID, "")
-	if err != nil {
-		return NewErrorResponse(err)
-	}
-	return NewSuccessResponse(balances)
-}
-
 // POST /get-transaction
 func (a *API) getTransaction(ctx context.Context, txInfo struct {
 	TxID string `json:"tx_id"`
@@ -130,7 +109,7 @@ func (a *API) getTransaction(ctx context.Context, txInfo struct {
 // POST /list-transactions
 func (a *API) listTransactions(ctx context.Context, filter struct {
 	ID          string `json:"id"`
-	AccountID   string `json:"account_id"`
+	Address     string `json:"address"`
 	Detail      bool   `json:"detail"`
 	Unconfirmed bool   `json:"unconfirmed"`
 	From        uint   `json:"from"`
@@ -151,13 +130,13 @@ func (a *API) listTransactions(ctx context.Context, filter struct {
 		}
 		transactions = []*query.AnnotatedTx{transaction}
 	} else {
-		transactions, err = a.wallet.GetTransactions(filter.AccountID)
+		transactions, err = a.wallet.GetTransactions(filter.Address)
 		if err != nil {
 			return NewErrorResponse(err)
 		}
 
 		if filter.Unconfirmed {
-			unconfirmedTxs, err := a.wallet.GetUnconfirmedTxs(filter.AccountID)
+			unconfirmedTxs, err := a.wallet.GetUnconfirmedTxs(filter.Address)
 			if err != nil {
 				return NewErrorResponse(err)
 			}
@@ -272,48 +251,6 @@ func (a *API) decodeRawTransaction(ctx context.Context, ins struct {
 	return NewSuccessResponse(tx)
 }
 
-// POST /list-unspent-outputs
-func (a *API) listUnspentOutputs(ctx context.Context, filter struct {
-	AccountID     string `json:"account_id"`
-	AccountAlias  string `json:"account_alias"`
-	ID            string `json:"id"`
-	Unconfirmed   bool   `json:"unconfirmed"`
-	SmartContract bool   `json:"smart_contract"`
-	From          uint   `json:"from"`
-	Count         uint   `json:"count"`
-}) Response {
-	accountID := filter.AccountID
-	if filter.AccountAlias != "" {
-		acc, err := a.wallet.AccountMgr.FindByAlias(filter.AccountAlias)
-		if err != nil {
-			return NewErrorResponse(err)
-		}
-		accountID = acc.ID
-	}
-	accountUTXOs := a.wallet.GetAccountUtxos(accountID, filter.ID, filter.Unconfirmed, filter.SmartContract)
-
-	UTXOs := []query.AnnotatedUTXO{}
-	for _, utxo := range accountUTXOs {
-		UTXOs = append([]query.AnnotatedUTXO{{
-			AccountID:           utxo.AccountID,
-			OutputID:            utxo.OutputID.String(),
-			SourceID:            utxo.SourceID.String(),
-			AssetID:             utxo.AssetID.String(),
-			Amount:              utxo.Amount,
-			SourcePos:           utxo.SourcePos,
-			Program:             fmt.Sprintf("%x", utxo.ControlProgram),
-			ControlProgramIndex: utxo.ControlProgramIndex,
-			Address:             utxo.Address,
-			ValidHeight:         utxo.ValidHeight,
-			Alias:               a.wallet.AccountMgr.GetAliasByID(utxo.AccountID),
-			AssetAlias:          a.wallet.AssetReg.GetAliasByID(utxo.AssetID.String()),
-			Change:              utxo.Change,
-		}}, UTXOs...)
-	}
-	start, end := getPageRange(len(UTXOs), filter.From, filter.Count)
-	return NewSuccessResponse(UTXOs[start:end])
-}
-
 // return gasRate
 func (a *API) gasRate() Response {
 	gasrate := map[string]int64{"gas_rate": consensus.VMGasRate}
@@ -421,4 +358,48 @@ func (a *API) listPubKeys(ctx context.Context, ins struct {
 		RootXPub:    account.XPubs[0],
 		PubKeyInfos: pubKeyInfos,
 	})
+}
+
+// POST /list-address-balances
+func (a *API) listAddressBalances(ctx context.Context, req struct {
+	Address string `json:"address"`
+}) Response {
+	balances, err := a.wallet.GetAddressBalances(req.Address)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+
+	return NewSuccessResponse(balances)
+}
+
+// POST /list-address-unspent-outputs
+func (a *API) listAddressUnspentOutputs(ctx context.Context, req struct {
+	Address       string `json:"address"`
+	ID            string `json:"id"`
+	Unconfirmed   bool   `json:"unconfirmed"`
+	SmartContract bool   `json:"smart_contract"`
+	From          uint   `json:"from"`
+	Count         uint   `json:"count"`
+}) Response {
+	addressUTXOs := a.wallet.GetAddressUTXOs(req.Address, req.ID, req.Unconfirmed, req.SmartContract)
+	utxos := []query.AnnotatedUTXO{}
+	for _, utxo := range addressUTXOs {
+		utxos = append([]query.AnnotatedUTXO{{
+			AccountID:           utxo.AccountID,
+			OutputID:            utxo.OutputID.String(),
+			SourceID:            utxo.SourceID.String(),
+			AssetID:             utxo.AssetID.String(),
+			Amount:              utxo.Amount,
+			SourcePos:           utxo.SourcePos,
+			Program:             fmt.Sprintf("%x", utxo.ControlProgram),
+			ControlProgramIndex: utxo.ControlProgramIndex,
+			Address:             utxo.Address,
+			ValidHeight:         utxo.ValidHeight,
+			Alias:               a.wallet.AccountMgr.GetAliasByID(utxo.AccountID),
+			AssetAlias:          a.wallet.AssetReg.GetAliasByID(utxo.AssetID.String()),
+			Change:              utxo.Change,
+		}}, utxos...)
+	}
+	start, end := getPageRange(len(utxos), req.From, req.Count)
+	return NewSuccessResponse(utxos[start:end])
 }

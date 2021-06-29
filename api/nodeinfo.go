@@ -83,14 +83,15 @@ func (a *API) connectPeerByIpAndPort(ip string, port uint16) (*peers.PeerInfo, e
 	}
 
 	addr := p2p.NewNetAddressIPPort(netIp, port)
-
 	if err := a.sync.DialPeerWithAddress(addr); err != nil {
 		return nil, errors.Wrap(err, "can not connect to the address")
 	}
+
 	peer := a.getPeerInfoByAddr(addr.String())
 	if peer == nil {
 		return nil, errors.New("the peer is disconnected again")
 	}
+
 	return peer, nil
 }
 
@@ -127,6 +128,7 @@ func (a *API) disconnectPeer(ctx context.Context, ins struct {
 	if err := a.disconnectPeerById(ins.PeerID); err != nil {
 		return NewErrorResponse(err)
 	}
+
 	return NewSuccessResponse(nil)
 }
 

@@ -15,7 +15,6 @@ import (
 	"github.com/bytom/bytom/blockchain/txbuilder"
 	"github.com/bytom/bytom/common"
 	"github.com/bytom/bytom/consensus"
-	"github.com/bytom/bytom/consensus/segwit"
 	"github.com/bytom/bytom/crypto"
 	"github.com/bytom/bytom/crypto/ed25519/chainkd"
 	"github.com/bytom/bytom/crypto/sha3pool"
@@ -611,17 +610,6 @@ func (m *Manager) ListControlProgram() ([]*CtrlProgram, error) {
 	return cps, nil
 }
 
-func (m *Manager) ListUnconfirmedUtxo(accountID string, isSmartContract bool) []*UTXO {
-	utxos := m.utxoKeeper.ListUnconfirmed()
-	result := []*UTXO{}
-	for _, utxo := range utxos {
-		if segwit.IsP2WScript(utxo.ControlProgram) != isSmartContract && (accountID == utxo.AccountID || accountID == "") {
-			result = append(result, utxo)
-		}
-	}
-	return result
-}
-
 // RemoveUnconfirmedUtxo remove utxos from the utxoKeeper
 func (m *Manager) RemoveUnconfirmedUtxo(hashes []*bc.Hash) {
 	m.utxoKeeper.RemoveUnconfirmedUtxo(hashes)
@@ -789,4 +777,15 @@ func (m *Manager) SaveControlPrograms(progs ...*CtrlProgram) error {
 		m.saveControlProgram(prog, prog.KeyIndex > currentIndex)
 	}
 	return nil
+}
+
+// ListUnconfirmedUTXO list unconfirmed UTXOs by filter func
+func (m *Manager) ListUnconfirmedUTXO(isWant func(*UTXO) bool) []*UTXO {
+	var utxos []*UTXO
+	for _, utxo := range m.utxoKeeper.ListUnconfirmed() {
+		if isWant(utxo) {
+			utxos = append(utxos, utxo)
+		}
+	}
+	return utxos
 }

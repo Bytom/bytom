@@ -24,23 +24,19 @@ func (w *Wallet) GetAccountUtxos(accountID string, id string, unconfirmed, isSma
 
 	accountUtxos := []*account.UTXO{}
 	if unconfirmed {
-		accountUtxos = w.AccountMgr.ListUnconfirmedUtxo(accountID, isSmartContract)
+		accountUtxos = w.AccountMgr.ListUnconfirmedUTXO(func(utxo *account.UTXO) bool {
+			return segwit.IsP2WScript(utxo.ControlProgram) != isSmartContract && (accountID == utxo.AccountID || accountID == "")
+		})
 	}
 
 	accountUtxoIter := w.DB.IteratorPrefix([]byte(prefix + id))
 	defer accountUtxoIter.Release()
 
-	for accountUtxoIter.Next() {
-		accountUtxo := &account.UTXO{}
-		if err := json.Unmarshal(accountUtxoIter.Value(), accountUtxo); err != nil {
-			log.WithFields(log.Fields{"module": logModule, "err": err}).Warn("GetAccountUtxos fail on unmarshal utxo")
-			continue
-		}
+	utxos := getUTXOs(accountUtxoIter, func(utxo *account.UTXO) bool {
+		return accountID == utxo.AccountID || accountID == ""
+	})
+	accountUtxos = append(accountUtxos, utxos...)
 
-		if accountID == accountUtxo.AccountID || accountID == "" {
-			accountUtxos = append(accountUtxos, accountUtxo)
-		}
-	}
 	return accountUtxos
 }
 
@@ -125,6 +121,31 @@ func (w *Wallet) filterAccountUtxo(utxos []*account.UTXO) []*account.UTXO {
 		}
 	}
 	return result
+}
+
+// GetAddressUTXOs return appointed address all asset  unspent UTXOs(outputs)
+func (w *Wallet) GetAddressUTXOs(address, id string, unconfirmed, isSmartContract bool) []*account.UTXO {
+	prefix := account.UTXOPreFix
+	if isSmartContract {
+		prefix = account.SUTXOPrefix
+	}
+
+	accountUTXOs := []*account.UTXO{}
+	if unconfirmed {
+		accountUTXOs = w.AccountMgr.ListUnconfirmedUTXO(func(utxo *account.UTXO) bool {
+			return segwit.IsP2WScript(utxo.ControlProgram) != isSmartContract && (address == utxo.Address || address == "")
+		})
+	}
+
+	accountUTXOIter := w.DB.IteratorPrefix([]byte(prefix + id))
+	defer accountUTXOIter.Release()
+
+	utxos := getUTXOs(accountUTXOIter, func(utxo *account.UTXO) bool {
+		return address == utxo.Address || address == ""
+	})
+	accountUTXOs = append(accountUTXOs, utxos...)
+
+	return accountUTXOs
 }
 
 func batchSaveUtxos(utxos []*account.UTXO, batch dbm.Batch) error {
@@ -249,4 +270,20 @@ func txOutToUtxos(tx *types.Tx, blockHeight uint64) []*account.UTXO {
 		utxos = append(utxos, utxo)
 	}
 	return utxos
+}
+
+func getUTXOs(accountUTXOIter dbm.Iterator, isWant func(*account.UTXO) bool) []*account.UTXO {
+	var accountUTXOs []*account.UTXO
+	for accountUTXOIter.Next() {
+		accountUTXO := &account.UTXO{}
+		if err := json.Unmarshal(accountUTXOIter.Value(), accountUTXO); err != nil {
+			log.WithFields(log.Fields{"module": logModule, "err": err}).Warn("GetAccountUtxos fail on unmarshal utxo")
+			continue
+		}
+
+		if isWant(accountUTXO) {
+			accountUTXOs = append(accountUTXOs, accountUTXO)
+		}
+	}
+	return accountUTXOs
 }

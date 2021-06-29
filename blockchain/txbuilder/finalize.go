@@ -30,7 +30,7 @@ var (
 // FinalizeTx validates a transaction signature template,
 // assembles a fully signed tx, and stores the effects of
 // its changes on the UTXO set.
-func FinalizeTx(ctx context.Context, c *protocol.Chain, tx *types.Tx) error {
+func FinalizeTx(_ context.Context, c *protocol.Chain, tx *types.Tx) error {
 	if fee := CalculateTxFee(tx); fee > cfg.CommonConfig.Wallet.MaxTxFee {
 		return ErrExtTxFee
 	}
@@ -44,6 +44,7 @@ func FinalizeTx(ctx context.Context, c *protocol.Chain, tx *types.Tx) error {
 	if err != nil {
 		return err
 	}
+
 	tx.TxData.SerializedSize = uint64(len(data) / 2)
 	tx.Tx.SerializedSize = uint64(len(data) / 2)
 
@@ -51,12 +52,15 @@ func FinalizeTx(ctx context.Context, c *protocol.Chain, tx *types.Tx) error {
 	if errors.Root(err) == protocol.ErrBadTx {
 		return errors.Sub(ErrRejected, err)
 	}
+
 	if err != nil {
 		return errors.WithDetail(err, "tx rejected: "+err.Error())
 	}
+
 	if isOrphan {
 		return ErrOrphanTx
 	}
+
 	return nil
 }
 
